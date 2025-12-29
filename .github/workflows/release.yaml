@@ -49,21 +49,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p protoc-gen-odin
+          # Install protoc-gen-odin alongside protoc for reliable discovery
+          PROTOC_PATH=$(which protoc)
+          PROTOC_DIR=$(dirname "$PROTOC_PATH")
+          echo "Installing protoc-gen-odin to: $PROTOC_DIR"
+          
+          TEMP_DIR=$(mktemp -d)
           if [ "${{ runner.os }}" == "Windows" ]; then
-            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-release.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-release.zip' --output "$TEMP_DIR/plugin.zip" --clobber
           elif [ "${{ runner.os }}" == "macOS" ]; then
-            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-macos-debug.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-macos-debug.zip' --output "$TEMP_DIR/plugin.zip" --clobber
           else
-            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-linux-debug.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-linux-debug.zip' --output "$TEMP_DIR/plugin.zip" --clobber
           fi
-          cd protoc-gen-odin
+          cd "$TEMP_DIR"
           unzip -q plugin.zip
           rm plugin.zip
-          if [ "${{ runner.os }}" != "Windows" ]; then
-            chmod +x protoc-gen-odin
+          
+          # Zip extracts to a subdirectory, find the binary inside
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            BINARY=$(find . -name "*.exe" -type f | head -1)
+            cp "$BINARY" "$PROTOC_DIR/protoc-gen-odin.exe"
+            echo "Installed: $PROTOC_DIR/protoc-gen-odin.exe"
+          else
+            BINARY=$(find . -type f ! -name "*.zip" | head -1)
+            cp "$BINARY" "$PROTOC_DIR/protoc-gen-odin"
+            chmod +x "$PROTOC_DIR/protoc-gen-odin"
+            echo "Installed: $PROTOC_DIR/protoc-gen-odin"
           fi
-          echo "$PWD" >> $GITHUB_PATH
+          ls -la "$PROTOC_DIR"
+
+      - name: Verify protoc-gen-odin
+        shell: bash
+        run: |
+          which protoc-gen-odin || which protoc-gen-odin.exe
+          protoc-gen-odin --version || true
 
       - name: Download Source from Pogo VCS
         shell: bash
