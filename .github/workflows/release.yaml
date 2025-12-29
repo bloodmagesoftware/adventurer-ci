@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           echo "⬇️ Downloading source for version ${{ github.event.client_payload.version }}..."
-          curl -L "${{ github.event.client_payload.source_url }}" -o source.zip
+          curl -H "Authorization: ${{ github.event.client_payload.pogo_token }}" -L "${{ github.event.client_payload.source_url }}" -o source.zip
 
       - name: Extract Source
         shell: bash
