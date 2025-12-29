@@ -39,6 +39,32 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install protoc-gen-odin
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p protoc-gen-odin
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-release.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-macos-debug.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+          else
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-linux-debug.zip' --output 'protoc-gen-odin/plugin.zip' --clobber
+          fi
+          cd protoc-gen-odin
+          unzip -q plugin.zip
+          rm plugin.zip
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x protoc-gen-odin
+          fi
+          echo "$PWD" >> $GITHUB_PATH
+
       - name: Download Source from Pogo VCS
         shell: bash
         run: |
