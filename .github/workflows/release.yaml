@@ -55,19 +55,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p venture
+          mkdir -p "$GITHUB_WORKSPACE/bin"
           if [ "${{ runner.os }}" == "Windows" ]; then
-            gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture.exe' --clobber
+          gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output "$GITHUB_WORKSPACE/bin/venture.exe" --clobber
           else
-            gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture' --clobber
-            chmod +x venture/venture
+          gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output "$GITHUB_WORKSPACE/bin/venture" --clobber
+          chmod +x "$GITHUB_WORKSPACE/bin/venture"
           fi
-          echo "$PWD/venture" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
 
       - name: Setup Odin
         uses: laytan/setup-odin@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup SDL3 Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -76,7 +74,7 @@ jobs:
           echo "Installing SDL3 libraries via Homebrew..."
           brew install sdl3 sdl3_image sdl3_ttf dylibbundler
 
-      - name: Setup SDL3 Dependencies (Linux/Windows)
+      - name: Setup SDL3 (Linux/Windows)
         if: runner.os != 'macOS'
         id: sdl
         uses: libsdl-org/setup-sdl@main
@@ -88,44 +86,45 @@ jobs:
           add-to-environment: true
           cache: true
 
-      - name: Export Library Paths
+      - name: Setup SDL3 for linkers (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
-          if [ "${{ runner.os }}" == "macOS" ]; then
-            # macOS with Homebrew
-            HOMEBREW_PREFIX=$(brew --prefix)
-            echo "Using Homebrew Prefix: $HOMEBREW_PREFIX"
-            echo "CPATH=$HOMEBREW_PREFIX/include:$CPATH" >> $GITHUB_ENV
-            echo "LIBRARY_PATH=$HOMEBREW_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-            echo "DYLD_LIBRARY_PATH=$HOMEBREW_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
-            echo "PKG_CONFIG_PATH=$HOMEBREW_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          elif [ "${{ runner.os }}" == "Windows" ]; then
-            # Windows with setup-sdl action
-            SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
-            echo "Using SDL Prefix: $SDL_PREFIX"
-            # On Windows, Odin (via MSVC linker) needs LIB and INCLUDE vars
-            echo "LIB=$SDL_PREFIX/lib;$LIB" >> $GITHUB_ENV
-            echo "INCLUDE=$SDL_PREFIX/include;$INCLUDE" >> $GITHUB_ENV
-            # Add bin to PATH so runtime DLLs are found during tests if needed
-            echo "$SDL_PREFIX/bin" >> $GITHUB_PATH
-          else
-            # Linux with setup-sdl action
-            SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
-            echo "Using SDL Prefix: $SDL_PREFIX"
-            echo "CPATH=$SDL_PREFIX/include:$CPATH" >> $GITHUB_ENV
-            echo "LIBRARY_PATH=$SDL_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-            echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-            echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          fi
+          echo "LIBRARY_PATH=${{ steps.sdl.outputs.prefix }}/lib" >> $GITHUB_ENV
+          echo "CPATH=${{ steps.sdl.outputs.prefix }}/include" >> $GITHUB_ENV
+          echo "${{ steps.sdl.outputs.prefix }}/bin" >> $GITHUB_PATH
+
+      - name: Setup SDL3 for linkers (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "LIBRARY_PATH=$SDL3_ROOT/lib:$SDL3_image_ROOT/lib:$SDL3_ttf_ROOT/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$SDL_PREFIX/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          echo "CPATH=$SDL3_ROOT/include:$SDL3_image_ROOT/include:$SDL3_ttf_ROOT/include:$CPATH" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$SDL_PREFIX/lib64/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
+      - name: Install LinuxDeploy (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # 1. Install libfuse2 (Required for AppImages on Ubuntu 22.04+)
+          sudo apt-get update && sudo apt-get install -y libfuse2
+
+          # 2. Download linuxdeploy from the official release
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+
+          # 3. Rename, make executable, and move to system bin
+          chmod +x linuxdeploy-x86_64.AppImage
+          sudo mv linuxdeploy-x86_64.AppImage /usr/local/bin/linuxdeploy
 
       - name: Build Game
-        shell: bash
         working-directory: pogo_repository
         run: venture build
 
       - name: Identify and Upload Artifact
         shell: bash
         run: |
+          ls -R pogo_repository
           cd pogo_repository/build
           FILE_NAME=$(ls)
           echo "Found build output: $FILE_NAME"
@@ -148,6 +147,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
