@@ -104,6 +104,15 @@ jobs:
           mkdir -p venture
           if [ "${{ runner.os }}" == "Windows" ]; then
             gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture.exe' --clobber
+          elif [ "${{ runner.os }}" == "Linux" ]; then
+            # Download AppImage and extract it (FUSE is not available in GitHub Actions)
+            gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture.AppImage' --clobber
+            chmod +x venture/venture.AppImage
+            cd venture
+            ./venture.AppImage --appimage-extract
+            mv squashfs-root/usr/bin/* .
+            rm -rf squashfs-root venture.AppImage
+            cd ..
           else
             gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture' --clobber
             chmod +x venture/venture
