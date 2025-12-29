@@ -56,7 +56,7 @@ jobs:
 
           TEMP_DIR=$(mktemp -d)
           if [ "${{ runner.os }}" == "Windows" ]; then
-            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-release.zip' --output "$TEMP_DIR/plugin.zip" --clobber
+            gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-debug.zip' --output "$TEMP_DIR/plugin.zip" --clobber
           elif [ "${{ runner.os }}" == "macOS" ]; then
             gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-macos-debug.zip' --output "$TEMP_DIR/plugin.zip" --clobber
           else
