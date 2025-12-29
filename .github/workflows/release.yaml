@@ -53,7 +53,7 @@ jobs:
           PROTOC_PATH=$(which protoc)
           PROTOC_DIR=$(dirname "$PROTOC_PATH")
           echo "Installing protoc-gen-odin to: $PROTOC_DIR"
-          
+
           TEMP_DIR=$(mktemp -d)
           if [ "${{ runner.os }}" == "Windows" ]; then
             gh release download --repo lordhippo/odin-protoc-plugin --pattern 'odin-protoc-plugin-*-windows-release.zip' --output "$TEMP_DIR/plugin.zip" --clobber
@@ -65,7 +65,7 @@ jobs:
           cd "$TEMP_DIR"
           unzip -q plugin.zip
           rm plugin.zip
-          
+
           # Zip extracts to a subdirectory, find the binary inside
           if [ "${{ runner.os }}" == "Windows" ]; then
             BINARY=$(find . -name "*.exe" -type f | head -1)
@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           echo "Installing SDL3 libraries via Homebrew..."
-          brew install sdl3 sdl3_image sdl3_ttf
+          brew install sdl3 sdl3_image sdl3_ttf dylibbundler
 
       - name: Setup SDL3 Dependencies (Linux/Windows)
         if: runner.os != 'macOS'
