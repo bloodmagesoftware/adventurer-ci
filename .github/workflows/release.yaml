@@ -115,7 +115,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup SDL3 Dependencies
+      - name: Setup SDL3 Dependencies (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "Installing SDL3 libraries via Homebrew..."
+          brew install sdl3 sdl3_image sdl3_ttf
+
+      - name: Setup SDL3 Dependencies (Linux/Windows)
+        if: runner.os != 'macOS'
         id: sdl
         uses: libsdl-org/setup-sdl@main
         with:
@@ -129,23 +137,30 @@ jobs:
       - name: Export Library Paths
         shell: bash
         run: |
-          # The setup-sdl action outputs the install prefix
-          SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
-
-          echo "Using SDL Prefix: $SDL_PREFIX"
-
-          if [ "${{ runner.os }}" == "Windows" ]; then
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            # macOS with Homebrew
+            HOMEBREW_PREFIX=$(brew --prefix)
+            echo "Using Homebrew Prefix: $HOMEBREW_PREFIX"
+            echo "CPATH=$HOMEBREW_PREFIX/include:$CPATH" >> $GITHUB_ENV
+            echo "LIBRARY_PATH=$HOMEBREW_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+            echo "DYLD_LIBRARY_PATH=$HOMEBREW_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+            echo "PKG_CONFIG_PATH=$HOMEBREW_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          elif [ "${{ runner.os }}" == "Windows" ]; then
+            # Windows with setup-sdl action
+            SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
+            echo "Using SDL Prefix: $SDL_PREFIX"
             # On Windows, Odin (via MSVC linker) needs LIB and INCLUDE vars
             echo "LIB=$SDL_PREFIX/lib;$LIB" >> $GITHUB_ENV
             echo "INCLUDE=$SDL_PREFIX/include;$INCLUDE" >> $GITHUB_ENV
             # Add bin to PATH so runtime DLLs are found during tests if needed
             echo "$SDL_PREFIX/bin" >> $GITHUB_PATH
           else
-            # Linux/macOS
+            # Linux with setup-sdl action
+            SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
+            echo "Using SDL Prefix: $SDL_PREFIX"
             echo "CPATH=$SDL_PREFIX/include:$CPATH" >> $GITHUB_ENV
             echo "LIBRARY_PATH=$SDL_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
             echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-            echo "DYLD_LIBRARY_PATH=$SDL_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
             echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
           fi
 
