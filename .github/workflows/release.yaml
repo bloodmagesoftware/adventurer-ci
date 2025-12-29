@@ -1,0 +1,150 @@
+name: External Pogo Build
+
+on:
+  repository_dispatch:
+    types: [pogo_trigger]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Webhook Secret
+        env:
+          EXPECTED_SECRET: ${{ secrets.POGO_WEBHOOK_SECRET }}
+          PAYLOAD_SECRET: ${{ github.event.client_payload.auth_secret }}
+        run: |
+          if [ "$PAYLOAD_SECRET" != "$EXPECTED_SECRET" ]; then
+            echo "::error::⛔ Security validation failed! Invalid secret."
+            exit 1
+          fi
+          echo "✅ Secret validated. Payload authorized."
+
+  build:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows x86_64
+            venture: venture-windows-x64.exe
+          - os: macos-latest
+            name: macOS ARM64
+            venture: venture-darwin-arm64
+          - os: ubuntu-latest
+            name: Ubuntu x86_64
+            venture: venture-linux-x86_64.AppImage
+
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Download Source from Pogo VCS
+        shell: bash
+        run: |
+          echo "⬇️ Downloading source for version ${{ github.event.client_payload.version }}..."
+          curl -L "${{ github.event.client_payload.source_url }}" -o source.zip
+
+      - name: Extract Source
+        shell: bash
+        run: |
+          unzip -q source.zip -d pogo_repository
+
+      - name: Download Venture
+        shell: bash
+        run: |
+          mkdir -p venture
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture.exe' --clobber
+          else
+            gh release download --repo tsukinoko-kun/venture --pattern '${{ matrix.venture }}' --output 'venture/venture' --clobber
+            chmod +x venture/venture
+          fi
+          echo "$PWD/venture" >> $GITHUB_PATH
+
+      - name: Setup Odin
+        uses: laytan/setup-odin@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup SDL3 Dependencies
+        id: sdl
+        uses: libsdl-org/setup-sdl@main
+        with:
+          version: 3-latest
+          version-sdl-image: 3-latest
+          version-sdl-ttf: 3-latest
+          install-linux-dependencies: true
+          add-to-environment: true
+          cache: true
+
+      - name: Export Library Paths
+        shell: bash
+        run: |
+          # The setup-sdl action outputs the install prefix
+          SDL_PREFIX="${{ steps.sdl.outputs.prefix }}"
+
+          echo "Using SDL Prefix: $SDL_PREFIX"
+
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            # On Windows, Odin (via MSVC linker) needs LIB and INCLUDE vars
+            echo "LIB=$SDL_PREFIX/lib;$LIB" >> $GITHUB_ENV
+            echo "INCLUDE=$SDL_PREFIX/include;$INCLUDE" >> $GITHUB_ENV
+            # Add bin to PATH so runtime DLLs are found during tests if needed
+            echo "$SDL_PREFIX/bin" >> $GITHUB_PATH
+          else
+            # Linux/macOS
+            echo "CPATH=$SDL_PREFIX/include:$CPATH" >> $GITHUB_ENV
+            echo "LIBRARY_PATH=$SDL_PREFIX/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+            echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+            echo "DYLD_LIBRARY_PATH=$SDL_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+            echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          fi
+
+      - name: Build Game
+        shell: bash
+        working-directory: pogo_repository
+        run: venture build
+
+      - name: Identify and Upload Artifact
+        shell: bash
+        run: |
+          cd pogo_repository/build
+          FILE_NAME=$(ls)
+          echo "Found build output: $FILE_NAME"
+          echo "ARTIFACT_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "ARTIFACT_PATH=pogo_repository/build/$FILE_NAME" >> $GITHUB_ENV
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Uses the actual filename (e.g. adventurer-darwin_arm64.zip) as the artifact name
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          echo "Creating release for version $VERSION..."
+          ls -R all_artifacts
+          gh release create "$VERSION" all_artifacts/* \
+            --title "Release $VERSION" \
+            --notes "Automated release triggered via Pogo." \
+            --generate-notes
